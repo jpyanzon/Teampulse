@@ -1,7 +1,30 @@
-# Un solo contenedor: Django sirve el build de Angular y PostgreSQL guarda los datos.
+# Django sirve el build de Angular; PostgreSQL corre en un servicio independiente.
 # Primera vez: migrate + seed_demo. Después el volumen conserva todo.
 
 services:
+  postgres:
+    image: ${POSTGRES_IMAGE:-postgres:17-bookworm}
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-teampulse}
+      POSTGRES_USER: ${POSTGRES_USER:-teampulse}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-teampulse}
+      PGDATA: /var/lib/postgresql/data
+    command: ["postgres", "-c", "listen_addresses=*", "-c", "hba_file=/etc/postgresql/pg_hba.conf"]
+    ports:
+      - "${POSTGRES_BIND_ADDRESS:-127.0.0.1}:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - teampulse_pgdata:/var/lib/postgresql/data
+      - ./docker/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    shm_size: "256mb"
+    stop_grace_period: 30s
+    restart: unless-stopped
+
   teampulse:
     build: .
     image: teampulse:prod
@@ -13,7 +36,7 @@ services:
       SECRET_KEY: ${SECRET_KEY:-cambia-esta-clave-antes-de-publicar-teampulse}
       ALLOWED_HOSTS: ${ALLOWED_HOSTS:-*}
       CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:-http://localhost:8000,http://127.0.0.1:8000}
-      POSTGRES_HOST: 127.0.0.1
+      POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"
       POSTGRES_DB: ${POSTGRES_DB:-teampulse}
       POSTGRES_USER: ${POSTGRES_USER:-teampulse}
@@ -21,9 +44,9 @@ services:
       POSTGRES_SSLMODE: disable
       FORCE_SEED: ${FORCE_SEED:-0}
       DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL:-noreply@teampulse.local}
-    volumes:
-      - teampulse_pgdata:/var/lib/postgresql/data
-    shm_size: "256mb"
+    depends_on:
+      postgres:
+        condition: service_healthy
     stop_grace_period: 30s
     restart: unless-stopped
 

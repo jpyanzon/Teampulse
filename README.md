@@ -124,7 +124,7 @@ Cada arranque borra el SQLite, migra y vuelve a sembrar las cuentas demo (`Clave
 
 ## Docker (producción)
 
-Una sola imagen: build de Angular, Django/Gunicorn y PostgreSQL. Los datos quedan en el volumen `teampulse_pgdata`.
+Dos servicios independientes: `teampulse` sirve Angular con Django/Gunicorn y `postgres` ejecuta PostgreSQL 17. Los datos quedan en el volumen `teampulse_pgdata`. La app espera a que PostgreSQL esté disponible antes de migrar.
 
 ```powershell
 docker compose up -d --build
@@ -132,9 +132,37 @@ docker compose up -d --build
 
 La app queda en [http://localhost:8000/](http://localhost:8000/). El primer arranque migra y corre `seed_demo` (cuentas de arriba, clave `ClaveDemo-2026`). Los siguientes arranques no vuelven a sembrar, así que no pisan claves ni datos cargados después.
 
+Para levantar solamente la base:
+
+```powershell
+docker compose up -d postgres
+```
+
+Desde DBeaver, pgAdmin o `psql`, conectate a `127.0.0.1:5432`, base `teampulse`, usuario `teampulse` y contraseña `teampulse` (valores por defecto). Dentro de Docker la app se conecta a `postgres:5432`.
+
+- Configurá `POSTGRES_DB`, `POSTGRES_USER` y `POSTGRES_PASSWORD` en `.env` (ver `.env.example`). En una base existente se conservan las credenciales originales; cambiar estas variables no cambia la contraseña guardada.
+- Para usar otro puerto del host: `POSTGRES_PORT=5433` en `.env`. El puerto interno sigue siendo `5432`.
+- El puerto se publica en la máquina local. Para acceder desde otros equipos: `POSTGRES_BIND_ADDRESS=0.0.0.0` en `.env`.
 - Repetir el seed a propósito: `FORCE_SEED=1` en el entorno y reiniciar el contenedor.
 - Empezar de cero (borra la base): `docker compose down -v` y volver a levantar.
-- Cambiá `SECRET_KEY` y `POSTGRES_PASSWORD` en `docker-compose.yml` antes de publicarlo.
+- Cambiá `SECRET_KEY` y `POSTGRES_PASSWORD` en `.env` antes de publicarlo.
+
+Si venís del contenedor que incluía PostgreSQL, antes de reemplazarlo guardá una copia y consultá la versión de los datos:
+
+```powershell
+docker compose exec teampulse bash -c 'PGPASSWORD="$POSTGRES_PASSWORD" pg_dumpall -h 127.0.0.1 -U "$POSTGRES_USER" -f /tmp/backup-postgres.sql'
+docker compose cp teampulse:/tmp/backup-postgres.sql ./backup-postgres.sql
+docker compose exec teampulse cat /var/lib/postgresql/data/PG_VERSION
+```
+
+La imagen debe usar la misma versión mayor que indique `PG_VERSION`; si hace falta, ajustá `POSTGRES_IMAGE` en `.env` (por ejemplo `postgres:16-bookworm` para datos de PostgreSQL 16). Se reutiliza el volumen existente y se configura el acceso por red con contraseña. Detené el contenedor anterior antes de iniciar el nuevo servicio para que dos servidores no usen el mismo volumen:
+
+```powershell
+docker compose stop teampulse
+docker compose up -d --build
+```
+
+No uses `down -v` durante este cambio. Para cambiar de versión mayor hace falta una migración mediante dump/restore o `pg_upgrade`; ver la [documentación de la imagen oficial](https://hub.docker.com/_/postgres).
 
 ## Producción
 

@@ -1,5 +1,4 @@
-# TeamPulse: Angular (build) + Django/Gunicorn + PostgreSQL en una sola imagen.
-# La base se inicializa en el primer arranque y los datos viven en /var/lib/postgresql/data.
+# TeamPulse: Angular (build) + Django/Gunicorn. PostgreSQL es otro servicio de Compose.
 
 FROM node:22-bookworm-slim AS frontend
 
@@ -19,21 +18,13 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     LANG=C.UTF-8 \
     LC_ALL=C.UTF-8 \
-    PGDATA=/var/lib/postgresql/data \
     DEBUG=False
 
-RUN printf '#!/bin/sh\nexit 101\n' > /usr/sbin/policy-rc.d \
-    && chmod +x /usr/sbin/policy-rc.d \
-    && apt-get update \
+RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         bash \
-        postgresql \
-        postgresql-contrib \
         tzdata \
-    && rm -rf /var/lib/apt/lists/* \
-    && mkdir -p /var/lib/postgresql/data /var/run/postgresql \
-    && chown -R postgres:postgres /var/lib/postgresql /var/run/postgresql \
-    && chmod 775 /var/run/postgresql
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
@@ -49,7 +40,6 @@ RUN python manage.py collectstatic --noinput \
     && chmod +x /app/docker/entrypoint.sh
 
 EXPOSE 8000
-VOLUME ["/var/lib/postgresql/data"]
 
 ENTRYPOINT ["/app/docker/entrypoint.sh"]
 CMD ["gunicorn", "teampulse.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "2", "--timeout", "120", "--access-logfile", "-", "--error-logfile", "-"]
